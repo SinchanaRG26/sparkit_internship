@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:#f6f7f9; --card:#fff; --text:#16181d; --muted:#6b7280; --border:#e5e7eb;
+    --up:#16a34a; --down:#dc2626; --warn:#d97706; --accent:#2563eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0e1116; --card:#171b22; --text:#e8eaed; --muted:#8b93a1; --border:#262c36; --accent:#5b9dff; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:14px 24px; border-bottom:1px solid var(--border); background:var(--card); position:sticky; top:0; z-index:5; }
+  h1 { font-size:18px; margin:0; display:flex; align-items:center; gap:10px; }
+  h2 { font-size:15px; margin:0 0 12px; }
+  main { max-width:1200px; margin:0 auto; padding:20px 24px 60px; display:grid; gap:20px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:14px; }
+  .tile { cursor:pointer; border:1px solid var(--border); border-radius:10px; padding:14px; background:var(--card); border-left:4px solid var(--muted); }
+  .tile.selected { outline:2px solid var(--accent); }
+  .tile.UP { border-left-color:var(--up); } .tile.DOWN { border-left-color:var(--down); background:rgba(220,38,38,.06); }
+  .tile .name { font-weight:600; } .tile .url { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:99px; font-size:11px; font-weight:700; color:#fff; background:var(--muted); }
+  .badge.UP,.badge.RECOVERED { background:var(--up); } .badge.DOWN { background:var(--down); } .badge.SLOW { background:var(--warn); } .badge.TEST { background:var(--accent); }
+  .badge.ONGOING { background:var(--down); }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .gap { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .big { font-size:22px; font-weight:700; margin:6px 0 2px; }
+  .muted { color:var(--muted); font-size:12px; }
+  button, input, select { font:inherit; padding:7px 12px; border-radius:7px; border:1px solid var(--border); background:var(--card); color:var(--text); }
+  button { cursor:pointer; } button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger { color:var(--down); }
+  form { display:flex; gap:8px; flex-wrap:wrap; }
+  form input[name=url] { flex:1 1 280px; }
+  table { width:100%; border-collapse:collapse; } th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; font-size:12px; }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:20px; } @media (max-width:800px){ .two{grid-template-columns:1fr;} }
+  .alert { padding:8px 0; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:baseline; }
+  .logs { font:12px ui-monospace,Menlo,monospace; max-height:260px; overflow:auto; white-space:pre-wrap; color:var(--muted); }
+  .scroll { max-height:300px; overflow:auto; }
+  canvas { max-height:280px; }
+  /* uptime bar */
+  .bar { display:flex; gap:2px; margin-top:10px; height:22px; }
+  .bar i { flex:1; border-radius:2px; background:var(--border); }
+  .bar i.ok { background:var(--up); } .bar i.fail { background:var(--down); }
+  /* live indicator */
+  .live { font-size:12px; font-weight:600; display:inline-flex; align-items:center; gap:6px; color:var(--muted); }
+  .live::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--muted); }
+  .live.on { color:var(--up); } .live.on::before { background:var(--up); animation:pulse 1.6s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(22,163,74,.5)} 70%{box-shadow:0 0 0 7px rgba(22,163,74,0)} 100%{box-shadow:0 0 0 0 rgba(22,163,74,0)} }
+  .chip { font-size:11px; padding:2px 8px; border-radius:99px; border:1px solid var(--border); color:var(--muted); }
+  .chip.on { color:var(--up); border-color:var(--up); }
+  #toast { position:fixed; right:20px; bottom:20px; max-width:340px; padding:12px 14px; border-radius:10px; color:#fff; background:var(--down); display:none; box-shadow:0 6px 24px rgba(0,0,0,.25); z-index:10; }
+  #toast.RECOVERED { background:var(--up); } #toast.SLOW { background:var(--warn); } #toast.TEST { background:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>API Monitor <span class="live" id="live">connecting…</span></h1>
+  <div class="gap">
+    <label class="muted">Report window
+      <select id="hours"><option value="1">1h</option><option value="24" selected>24h</option><option value="168">7d</option></select>
+    </label>
+    <button id="toggleFlaky" title="Simulate an outage on the demo flaky API">Toggle demo outage</button>
+  </div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Add an endpoint</h2>
+    <form id="addForm">
+      <input name="name" placeholder="Name (optional)">
+      <input name="url" placeholder="https://api.example.com/health" required>
+      <select name="intervalSec"><option value="10">every 10s</option><option value="30" selected>every 30s</option><option value="60">every 1m</option><option value="300">every 5m</option></select>
+      <button class="primary">Add</button>
+    </form>
+    <div class="muted" id="formMsg"></div>
+  </section>
+
+  <section><div class="grid" id="tiles"></div></section>
+
+  <section class="card">
+    <div class="row"><h2 id="chartTitle">Response time</h2><span class="muted">last 60 checks (ms)</span></div>
+    <canvas id="chart"></canvas>
+  </section>
+
+  <section class="card">
+    <h2>Performance report</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Endpoint</th><th>Status</th><th>Uptime</th><th>Avg</th><th>p95</th><th>Min / Max</th><th>Checks</th><th>Failed</th><th></th></tr></thead>
+      <tbody id="report"></tbody>
+    </table></div>
+  </section>
+
+  <section class="card">
+    <h2>Incident history</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Endpoint</th><th>Started</th><th>Ended</th><th>Duration</th><th>Cause</th><th></th></tr></thead>
+      <tbody id="incidents"></tbody>
+    </table></div>
+  </section>
+
+  <div class="two">
+    <section class="card">
+      <div class="row"><h2>Alerts</h2><button id="testAlert">Send test alert</button></div>
+      <div class="gap" id="channels" style="margin-bottom:10px"></div>
+      <div class="scroll" id="alerts"></div>
+    </section>
+    <section class="card"><h2>Logs</h2><div class="logs" id="logs"></div></section>
+  </div>
+</main>
+<div id="toast"></div>
+
+<script>
+let selected = null, chart = null, summary = null;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const api = (p, o) => fetch(p, o).then(r => r.json());
+const fmtTime = ts => new Date(ts).toLocaleTimeString();
+const ms = v => v == null ? '–' : v + ' ms';
+function dur(a, b) {
+  const s = Math.round(((b ?? Date.now()) - a) / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+async function refresh() {
+  summary = await api('/api/summary?hours=' + $('#hours').value);
+  if (selected == null || !summary.endpoints.find(e => e.id === selected)) selected = summary.endpoints[0]?.id ?? null;
+  renderTiles(); renderReport();
+  await Promise.all([renderChart(), renderAlerts(), renderIncidents(), renderLogs()]);
+}
+
+function renderTiles() {
+  $('#tiles').innerHTML = summary.endpoints.map(e => `
+    <div class="tile ${e.status} ${e.id === selected ? 'selected' : ''}" data-id="${e.id}">
+      <div class="row"><span class="name">${esc(e.name)}</span><span class="badge ${e.status}">${e.status}</span></div>
+      <div class="url">${esc(e.url)}</div>
+      <div class="big">${ms(e.lastCheck?.ms)}</div>
+      <div class="muted">${e.uptimePct == null ? 'No data yet' : e.uptimePct + '% uptime · avg ' + ms(e.avgMs)}</div>
+      <div class="bar" title="Last ${e.recent.length} checks (green = up, red = failed)">
+        ${e.recent.map(c => `<i class="${c.ok ? 'ok' : 'fail'}" title="${fmtTime(c.ts)} · ${c.ok ? c.ms + ' ms' : 'failed'}"></i>`).join('')}
+      </div>
+    </div>`).join('') || '<div class="muted">No endpoints yet. Add one above.</div>';
+  document.querySelectorAll('.tile').forEach(t => t.onclick = () => { selected = +t.dataset.id; renderTiles(); renderChart(); });
+}
+
+function renderReport() {
+  $('#report').innerHTML = summary.endpoints.map(e => `
+    <tr>
+      <td><b>${esc(e.name)}</b></td>
+      <td><span class="badge ${e.status}">${e.status}</span></td>
+      <td>${e.uptimePct == null ? '–' : e.uptimePct + '%'}</td>
+      <td>${ms(e.avgMs)}</td><td>${ms(e.p95Ms)}</td>
+      <td>${e.minMs ?? '–'} / ${e.maxMs ?? '–'}</td>
+      <td>${e.totalChecks}</td><td>${e.failedChecks}</td>
+      <td><button data-check="${e.id}">Check now</button> <button class="danger" data-del="${e.id}">Delete</button></td>
+    </tr>`).join('');
+  document.querySelectorAll('[data-check]').forEach(b => b.onclick = async () => { await api(`/api/endpoints/${b.dataset.check}/check`, { method: 'POST' }); });
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (confirm('Delete this endpoint and its history?')) await api(`/api/endpoints/${b.dataset.del}`, { method: 'DELETE' });
+  });
+}
+
+async function renderChart() {
+  if (selected == null) return;
+  const ep = summary.endpoints.find(e => e.id === selected);
+  $('#chartTitle').textContent = 'Response time – ' + (ep?.name || '');
+  const checks = await api(`/api/endpoints/${selected}/checks?limit=60`);
+  const data = {
+    labels: checks.map(c => fmtTime(c.ts)),
+    datasets: [
+      { label: 'Response time (ms)', data: checks.map(c => c.ok ? c.ms : null), borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,.12)', fill: true, tension: .3, pointRadius: 2, spanGaps: false },
+      { label: 'Failed check', data: checks.map(c => c.ok ? null : 0), borderColor: '#dc2626', backgroundColor: '#dc2626', showLine: false, pointRadius: 6, pointStyle: 'crossRot' },
+    ],
+  };
+  if (chart) { chart.data = data; chart.update(); }
+  else chart = new Chart($('#chart'), { type: 'line', data, options: { animation: false, responsive: true, interaction: { mode: 'index', intersect: false },
+    scales: { y: { beginAtZero: true, title: { display: true, text: 'ms' } }, x: { ticks: { maxTicksLimit: 8 } } } } });
+}
+
+async function renderIncidents() {
+  const list = await api('/api/incidents?limit=30');
+  $('#incidents').innerHTML = list.map(i => `
+    <tr>
+      <td><b>${esc(i.name)}</b></td>
+      <td>${new Date(i.startedAt).toLocaleString()}</td>
+      <td>${i.endedAt ? new Date(i.endedAt).toLocaleString() : '<span class="badge ONGOING">ONGOING</span>'}</td>
+      <td>${dur(i.startedAt, i.endedAt)}</td>
+      <td>${esc(i.reason || '')}</td><td></td>
+    </tr>`).join('') || '<tr><td colspan="6" class="muted">No incidents recorded. Try “Toggle demo outage”.</td></tr>';
+}
+
+async function renderAlerts() {
+  const [alerts, ch] = await Promise.all([api('/api/alerts?limit=30'), api('/api/channels')]);
+  $('#channels').innerHTML = Object.entries(ch).map(([k, v]) => `<span class="chip ${v ? 'on' : ''}">${v ? '●' : '○'} ${k}</span>`).join('');
+  $('#alerts').innerHTML = alerts.map(a => `
+    <div class="alert"><span class="badge ${a.type}">${a.type}</span>
+      <div><b>${esc(a.name)}</b> – ${esc(a.message)}<div class="muted">${new Date(a.ts).toLocaleString()}</div></div></div>`).join('')
+    || '<div class="muted">No alerts yet. Try “Toggle demo outage”.</div>';
+}
+
+async function renderLogs() { $('#logs').textContent = (await api('/api/logs?limit=60')).join('\n'); }
+
+function toast(type, text) {
+  const t = $('#toast'); t.className = type; t.textContent = text; t.style.display = 'block';
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 6000);
+}
+
+// ---- live updates over WebSocket (falls back to polling) ----
+let refreshTimer = null;
+function scheduleRefresh() { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 250); }
+function connect() {
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  ws.onopen = () => { $('#live').textContent = 'LIVE'; $('#live').classList.add('on'); };
+  ws.onclose = () => { $('#live').textContent = 'reconnecting…'; $('#live').classList.remove('on'); setTimeout(connect, 2000); };
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.type === 'alert') toast(m.alertType, `${m.alertType}: ${m.name} – ${m.message}`);
+    scheduleRefresh();
+  };
+}
+
+$('#addForm').onsubmit = async e => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  const r = await fetch('/api/endpoints', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f) });
+  const j = await r.json();
+  $('#formMsg').textContent = r.ok ? 'Added.' : j.error;
+  if (r.ok) e.target.reset();
+};
+$('#toggleFlaky').onclick = async () => {
+  const r = await api('/demo/flaky/toggle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  setToggleLabel(r.down);
+};
+function setToggleLabel(down) { $('#toggleFlaky').textContent = down ? 'Restore demo API' : 'Toggle demo outage'; }
+$('#testAlert').onclick = async () => {
+  const r = await api('/api/alerts/test', { method: 'POST' });
+  const parts = [];
+  if (r.sent.length) parts.push('sent via ' + r.sent.join(', '));
+  if (r.failed.length) parts.push('failed: ' + r.failed.join('; '));
+  toast('TEST', 'Test alert ' + (parts.join(' | ') || 'shown on dashboard only (no email/Telegram configured)'));
+};
+$('#hours').onchange = refresh;
+
+api('/demo/flaky/state').then(s => setToggleLabel(s.down));
+connect();
+refresh();
+setInterval(refresh, 30000); // safety net if the WebSocket is down
+</script>
+</body>
+</html>

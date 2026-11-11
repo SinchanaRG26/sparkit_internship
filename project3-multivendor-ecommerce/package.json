@@ -1,0 +1,25 @@
+{
+  "name": "multivendor-ecommerce",
+  "version": "1.0.0",
+  "description": "Multi-Vendor E-Commerce Platform (microservices)",
+  "main": "start-all.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "start": "node start-all.js",
+    "seed": "node seed.js",
+    "test": "node test/e2e.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "pdfkit": "^0.20.2"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}

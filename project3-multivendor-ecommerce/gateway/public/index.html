@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShopSphere</title>
+  <meta name="description" content="ShopSphere - a multi-vendor marketplace demo built with microservices.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9B%8D%EF%B8%8F%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap bar">
+      <a class="brand" href="#/"><span class="logo">S</span>ShopSphere</a>
+      <form class="search" data-form="search" role="search">
+        <input type="search" name="q" placeholder="Search products, brands, categories" aria-label="Search products" autocomplete="off">
+        <button aria-label="Search">Search</button>
+      </form>
+      <nav id="nav" aria-label="Main"></nav>
+    </div>
+  </header>
+  <main id="app" class="wrap" aria-live="polite"></main>
+  <footer class="foot">
+    <div class="wrap foot-in">
+      <span>ShopSphere &middot; demo marketplace &middot; payments are simulated (test mode)</span>
+      <span id="health" class="health" title="Microservice status">checking services&hellip;</span>
+    </div>
+  </footer>
+  <div id="toasts" role="status" aria-live="polite"></div>
+  <script src="art.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
